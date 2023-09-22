@@ -134,8 +134,8 @@ struct Point4d
     }
 };
 
-constexpr size_t SMOOTHNESS_BOUND_LIMIT = 1 << 20;
-constexpr size_t NUM_TRIALS = 32;
+constexpr size_t SMOOTHNESS_BOUND_LIMIT = 1 << 24;
+constexpr size_t NUM_TRIALS = 4;
 
 template <typename T>
 mpz_class factorize_with_algebraic_group(mpz_class const &n)
@@ -202,7 +202,7 @@ int main()
     mpz_class n;
     std::cin >> n;
 
-    std::cout << "Do you want to work on the group of units in a quadratic field [p]"
+    std::cout << "Do you want to work on the group of units in a quadratic field [p] "
                  "or some quaternion-like thing [q]? [p / q] ";
 
     char method;
