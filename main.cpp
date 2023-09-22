@@ -1,6 +1,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <future>
 #include <iostream>
 #include <variant>
 #include <vector>
@@ -153,7 +154,7 @@ mpz_class factorize_with_algebraic_group(mpz_class const &n)
     }
 
     gmp_randclass rng(gmp_randinit_default);
-    rng.seed(std::chrono::duration_cast<std::chrono::microseconds>(
+    rng.seed(std::chrono::duration_cast<std::chrono::nanoseconds>(
                  std::chrono::system_clock::now().time_since_epoch())
                  .count());
 
@@ -189,6 +190,12 @@ mpz_class factorize_with_algebraic_group(mpz_class const &n)
     return -1;
 }
 
+template <typename R>
+bool is_ready(std::future<R> const &f)
+{
+    return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+}
+
 int main()
 {
     std::cout << "n : ";
@@ -201,15 +208,35 @@ int main()
     char method;
     std::cin >> method;
 
-    mpz_class factor;
-    if (method == 'p')
-        factor = factorize_with_algebraic_group<Point2d>(n);
-    else
-        factor = factorize_with_algebraic_group<Point4d>(n);
+    std::vector<std::future<mpz_class>> fut;
 
-    if (factor == -1)
-        std::cout << "no factor found\n";
-    else
-        std::cout << "factor found:\n"
-                  << factor << '\n';
+    for (size_t i = 0; i < std::thread::hardware_concurrency(); ++i)
+    {
+        if (method == 'p')
+            fut.emplace_back(std::async(factorize_with_algebraic_group<Point2d>, n));
+        else
+            fut.emplace_back(std::async(factorize_with_algebraic_group<Point4d>, n));
+    }
+
+    while (!fut.empty())
+    {
+        for (auto f = fut.begin(); f != fut.end(); ++f)
+            if (is_ready(*f))
+            {
+                mpz_class factor = f->get();
+                if (factor != -1)
+                {
+                    std::cout << "factor found:\n"
+                              << factor << '\n';
+                    return 0;
+                }
+                else
+                {
+                    fut.erase(f);
+                    break;
+                }
+            }
+    }
+
+    std::cout << "no factor found\n";
 }
