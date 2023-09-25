@@ -38,7 +38,7 @@ struct QuadFieldUnit
     static QuadFieldUnit pow(QuadFieldUnit a, uint64_t exponent, const mpz_class &d, const mpz_class &n)
     {
         QuadFieldUnit result;
-        while (exponent)
+        while (exponent != 0)
         {
             if (exponent & 1)
                 result = mul(result, a, d, n);
@@ -60,6 +60,16 @@ struct QuadFieldUnit
 
         mpz_class d = ((((1 - x * x) % n) + n) * ((s * s) % n)) % n;
         return std::make_pair(QuadFieldUnit(std::move(x), std::move(y)), std::move(d));
+    }
+
+    mpz_class try_gcd(const mpz_class &n)
+    {
+        mpz_class g;
+        mpz_gcd(g.get_mpz_t(), x.get_mpz_t(), n.get_mpz_t());
+        if (g > 1)
+            return g;
+        mpz_gcd(g.get_mpz_t(), y.get_mpz_t(), n.get_mpz_t());
+        return g;
     }
 
     void print()
@@ -110,7 +120,7 @@ struct CubicFieldUnit
         CubicFieldUnit a, uint64_t exponent, const mpz_class &d, const mpz_class &n)
     {
         CubicFieldUnit result;
-        while (exponent)
+        while (exponent != 0)
         {
             if (exponent & 1)
                 result = mul(result, a, d, n);
@@ -132,6 +142,19 @@ struct CubicFieldUnit
 
         const mpz_class d = ((1 - (((x * x) % n) * x) % n + n) * ((((s * s) % n) * (s % n + n)) % n)) % n;
         return std::make_pair(CubicFieldUnit(std::move(x), std::move(y), 0), std::move(d));
+    }
+
+    mpz_class try_gcd(const mpz_class &n)
+    {
+        mpz_class g;
+        mpz_gcd(g.get_mpz_t(), x.get_mpz_t(), n.get_mpz_t());
+        if (g > 1)
+            return g;
+        mpz_gcd(g.get_mpz_t(), y.get_mpz_t(), n.get_mpz_t());
+        if (g > 1)
+            return g;
+        mpz_gcd(g.get_mpz_t(), z.get_mpz_t(), n.get_mpz_t());
+        return g;
     }
 
     void print()
@@ -173,7 +196,7 @@ struct Quaternion // <- misleading name, but it's close
     static Quaternion pow(Quaternion a, uint64_t exponent, const mpz_class &d, const mpz_class &n)
     {
         Quaternion result;
-        while (exponent)
+        while (exponent != 0)
         {
             if (exponent & 1)
                 result = mul(result, a, d, n);
@@ -199,6 +222,22 @@ struct Quaternion // <- misleading name, but it's close
                               std::move(d));
     }
 
+    mpz_class try_gcd(const mpz_class &n)
+    {
+        mpz_class g;
+        mpz_gcd(g.get_mpz_t(), x.get_mpz_t(), n.get_mpz_t());
+        if (g > 1)
+            return g;
+        mpz_gcd(g.get_mpz_t(), y.get_mpz_t(), n.get_mpz_t());
+        if (g > 1)
+            return g;
+        mpz_gcd(g.get_mpz_t(), z.get_mpz_t(), n.get_mpz_t());
+        if (g > 1)
+            return g;
+        mpz_gcd(g.get_mpz_t(), w.get_mpz_t(), n.get_mpz_t());
+        return g;
+    }
+
     void print()
     {
         std::cout << "Point4d { x = " << x << ", y = " << y
@@ -206,8 +245,58 @@ struct Quaternion // <- misleading name, but it's close
     }
 };
 
-constexpr size_t SMOOTHNESS_BOUND_LIMIT = 1 << 24;
-constexpr size_t NUM_TRIALS = 4;
+template <typename T>
+T mod_exp(T x, T y, T n)
+{
+    T z = 1;
+
+    while (y)
+    {
+        if (y & 1)
+        {
+            z = (z * x) % n;
+        }
+        x = (x * x) % n;
+        y >>= 1;
+    }
+
+    return z;
+}
+
+// Works for numbers up to 2^32 or so.
+template <typename T>
+bool is_prime(T n)
+{
+    if (n == 2)
+        return true;
+
+    constexpr uint64_t MILLER_RABIN_BASES[3] = {15, 7363882082, 992620450144556};
+
+    uint32_t trailing_zeros = std::countr_zero(n - 1);
+    T u = (n - 1) >> trailing_zeros;
+
+    for (auto a : MILLER_RABIN_BASES)
+    {
+        a %= n;
+        if (!a)
+            continue;
+
+        T x = mod_exp(a, u, n);
+        for (uint32_t i = 0; i < trailing_zeros; ++i)
+        {
+            T y = (x * x) % n;
+            if (y == 1 && x != 1 && x != n - 1)
+                return false;
+            x = y;
+        }
+        if (x != 1)
+            return false;
+    }
+
+    return true;
+}
+
+constexpr size_t B1 = 1ULL << 19, B2 = 1ULL << 24;
 
 template <typename T>
 mpz_class factorize_with_algebraic_group(mpz_class const &n)
@@ -215,12 +304,12 @@ mpz_class factorize_with_algebraic_group(mpz_class const &n)
     std::vector<uint64_t> primes;
 
     {
-        std::vector<bool> is_composite(SMOOTHNESS_BOUND_LIMIT + 1);
-        for (size_t i = 2; i <= SMOOTHNESS_BOUND_LIMIT; ++i)
+        std::vector<bool> is_composite(B1 + 1);
+        for (size_t i = 2; i <= B1; ++i)
             if (!is_composite[i])
             {
                 primes.push_back(i);
-                for (size_t j = i * i; j <= SMOOTHNESS_BOUND_LIMIT; j += i)
+                for (size_t j = i * i; j <= B1; j += i)
                     is_composite[j] = 1;
             }
     }
@@ -230,34 +319,43 @@ mpz_class factorize_with_algebraic_group(mpz_class const &n)
                  std::chrono::system_clock::now().time_since_epoch())
                  .count());
 
-    for (size_t smoothness_bound = 2; smoothness_bound <= SMOOTHNESS_BOUND_LIMIT; smoothness_bound <<= 1)
+    auto largest_smooth_prime = primes.begin();
+    T a;
+    mpz_class d;
+
+    for (size_t smoothness_bound = 1 << 10; smoothness_bound <= B1; smoothness_bound <<= 1)
     {
-        for (size_t t = 0; t < NUM_TRIALS; ++t)
+        std::cout << "set smoothness bound to " << smoothness_bound << std::endl;
+        while (largest_smooth_prime != primes.end() && *largest_smooth_prime <= smoothness_bound)
+            ++largest_smooth_prime;
+
+        auto initial = T::initial_point(n, rng);
+        if (std::holds_alternative<mpz_class>(initial))
+            return std::get<mpz_class>(initial);
+
+        std::tie(a, d) = std::get<std::pair<T, mpz_class>>(initial);
+        assert(a.norm(d, n) == 1);
+
+        for (auto p = primes.begin(); p <= largest_smooth_prime; ++p)
         {
-            auto initial = T::initial_point(n, rng);
-            if (std::holds_alternative<mpz_class>(initial))
-                return std::get<mpz_class>(initial);
-
-            auto [a, d] = std::get<std::pair<T, mpz_class>>(initial);
-            assert(a.norm(d, n) == 1);
-
-            for (uint64_t p : primes)
-            {
-                uint64_t q = p;
-                while (q <= smoothness_bound)
-                {
-                    a = T::pow(a, p, d, n);
-                    assert(a.norm(d, n) == 1);
-
-                    mpz_class g;
-                    mpz_gcd(g.get_mpz_t(), a.y.get_mpz_t(), n.get_mpz_t());
-                    if (g > 1)
-                        return g;
-                    q *= p;
-                }
-            }
+            uint64_t q = *p;
+            while (q <= smoothness_bound)
+                q *= *p;
+            a = T::pow(a, q, d, n);
         }
+
+        const mpz_class g = a.try_gcd(n);
+        if (g > 1)
+            return g;
     }
+
+    for (uint64_t p = B1 + 1; p <= B2; ++p)
+        if (is_prime(p))
+            a = T::pow(a, p, d, n);
+
+    const mpz_class g = a.try_gcd(n);
+    if (g > 1)
+        return g;
 
     return -1;
 }
