@@ -265,7 +265,7 @@ mpz_class factorize_with_algebraic_group(mpz_class const &n)
 template <typename R>
 bool is_ready(std::future<R> const &f)
 {
-    return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    return f.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
 }
 
 int main()
