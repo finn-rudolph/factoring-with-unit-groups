@@ -8,36 +8,36 @@
 
 #include <gmpxx.h>
 
-struct Point2d
+struct QuadFieldUnit
 {
     mpz_class x, y;
 
-    Point2d() { x = 1, y = 0; }
+    QuadFieldUnit() { x = 1, y = 0; }
 
-    Point2d(mpz_class &&x, mpz_class &&y) { this->x = x, this->y = y; }
+    QuadFieldUnit(mpz_class &&x, mpz_class &&y) { this->x = x, this->y = y; }
 
     mpz_class norm(const mpz_class &d, const mpz_class &n)
     {
         return (x * x + d * y * y) % n;
     }
 
-    static Point2d square(const Point2d &a, const mpz_class &d, const mpz_class &n)
+    static QuadFieldUnit square(const QuadFieldUnit &a, const mpz_class &d, const mpz_class &n)
     {
-        return (Point2d){((a.x * a.x) % n - (d * (a.y * a.y) % n) % n + n) % n,
-                         ((a.x << 1) * a.y) % n};
+        return (QuadFieldUnit){((a.x * a.x) % n - (d * (a.y * a.y) % n) % n + n) % n,
+                               ((a.x << 1) * a.y) % n};
     }
 
-    static Point2d mul(const Point2d &a, const Point2d &b, const mpz_class &d, const mpz_class &n)
+    static QuadFieldUnit mul(const QuadFieldUnit &a, const QuadFieldUnit &b, const mpz_class &d, const mpz_class &n)
     {
         mpz_class q = ((a.x + a.y) * (b.x + b.y)) % n,
                   r = (a.x * b.x) % n,
                   s = (a.y * b.y) % n;
-        return Point2d((r - (d * s) % n + n) % n, (q - r - s + (n << 1)) % n);
+        return QuadFieldUnit((r - (d * s) % n + n) % n, (q - r - s + (n << 1)) % n);
     }
 
-    static Point2d pow(Point2d a, uint64_t exponent, const mpz_class &d, const mpz_class &n)
+    static QuadFieldUnit pow(QuadFieldUnit a, uint64_t exponent, const mpz_class &d, const mpz_class &n)
     {
-        Point2d result;
+        QuadFieldUnit result;
         while (exponent)
         {
             if (exponent & 1)
@@ -48,7 +48,7 @@ struct Point2d
         return result;
     }
 
-    static std::variant<std::pair<Point2d, mpz_class>, mpz_class> initial_point(
+    static std::variant<std::pair<QuadFieldUnit, mpz_class>, mpz_class> initial_point(
         const mpz_class &n, gmp_randclass &rng)
     {
         mpz_class x = rng.get_z_range(n), y = rng.get_z_range(n);
@@ -59,7 +59,7 @@ struct Point2d
             return g;
 
         mpz_class d = ((((1 - x * x) % n) + n) * ((s * s) % n)) % n;
-        return std::make_pair(Point2d(std::move(x), std::move(y)), std::move(d));
+        return std::make_pair(QuadFieldUnit(std::move(x), std::move(y)), std::move(d));
     }
 
     void print()
@@ -68,39 +68,48 @@ struct Point2d
     }
 };
 
-struct Point4d
+// A unit modulo p in the cubic field Q(sqrt(d))
+struct CubicFieldUnit
 {
-    mpz_class x, y, z, w;
+    mpz_class x, y, z;
 
-    Point4d() { x = 1, y = 0, z = 0, w = 0; }
+    CubicFieldUnit() { x = 1, y = 0, z = 0; }
 
-    Point4d(mpz_class &&x, mpz_class &&y, mpz_class &&z, mpz_class &&w)
+    CubicFieldUnit(mpz_class &&x, mpz_class &&y, mpz_class &&z)
     {
-        this->x = x, this->y = y, this->z = z, this->w = w;
+        this->x = x, this->y = y, this->z = z;
     }
 
     mpz_class norm(const mpz_class &d, const mpz_class &n)
     {
-        return (x * x + d * (y * y + z * z + w * w)) % n;
+        return (((x * x) % n) * x +
+                ((((y * y) % n) * y) % n + (((z * z) % n) * ((z * d) % n)) % n) * d -
+                (3 * ((x * y) % n) * ((z * d) % n)) % n + n) %
+               n;
     }
 
-    static Point4d mul(const Point4d &a, const Point4d &b, const mpz_class &d, const mpz_class &n)
+    static CubicFieldUnit mul(
+        const CubicFieldUnit &a, const CubicFieldUnit &b, const mpz_class &d, const mpz_class &n)
     {
-        return Point4d((a.x * b.x - ((d * (a.y * b.y + a.z * b.z + a.w * b.w)) % n) + n) % n,
-                       (a.x * b.y + a.y * b.x + a.z * b.w - (a.w * b.z) % n + n) % n,
-                       (a.x * b.z + a.z * b.x + a.w * b.y - (a.y * b.w) % n + n) % n,
-                       (a.x * b.w + a.w * b.x + a.y * b.z - (a.z * b.y) % n + n) % n);
+        const mpz_class s1 = (a.x * b.x) % n, s2 = (a.y * b.y) % n, s3 = (a.z * b.z) % n,
+                        r1 = ((a.x + a.y) * (b.x + b.y)) % n, r2 = ((a.y + a.z) * (b.y + b.z)) % n,
+                        r3 = ((a.z + a.x) * (b.z + b.x)) % n;
+        return CubicFieldUnit((d * (r2 - s2 - s3 + 2 * n) + s1) % n,
+                              (r1 - s1 - s2 + d * s3 + 2 * n) % n,
+                              (r3 - s3 - s1 + s2 + 2 * n) % n);
     }
 
-    static Point4d square(const Point4d &a, const mpz_class &d, const mpz_class &n)
+    static CubicFieldUnit square(const CubicFieldUnit &a, const mpz_class &d, const mpz_class &n)
     {
-        return Point4d((a.x * a.x - ((d * (a.y * a.y + a.z * a.z + a.w * a.w)) % n) + n) % n,
-                       ((a.x * a.y) << 1) % n, ((a.x * a.z) << 1) % n, ((a.x * a.w) << 1) % n);
+        return CubicFieldUnit((a.x * a.x + ((2 * d * a.y) % n) * a.z) % n,
+                              (2 * a.x * a.y + d * ((a.z * a.z) % n)) % n,
+                              (2 * a.z * a.x + a.y * a.y) % n);
     }
 
-    static Point4d pow(Point4d a, uint64_t exponent, const mpz_class &d, const mpz_class &n)
+    static CubicFieldUnit pow(
+        CubicFieldUnit a, uint64_t exponent, const mpz_class &d, const mpz_class &n)
     {
-        Point4d result;
+        CubicFieldUnit result;
         while (exponent)
         {
             if (exponent & 1)
@@ -111,7 +120,70 @@ struct Point4d
         return result;
     }
 
-    static std::variant<std::pair<Point4d, mpz_class>, mpz_class> initial_point(
+    static std::variant<std::pair<CubicFieldUnit, mpz_class>, mpz_class> initial_point(
+        const mpz_class &n, gmp_randclass &rng)
+    {
+        mpz_class x = rng.get_z_range(n), y = rng.get_z_range(n);
+
+        mpz_class g, s, t;
+        mpz_gcdext(g.get_mpz_t(), s.get_mpz_t(), t.get_mpz_t(), y.get_mpz_t(), n.get_mpz_t());
+        if (g > 1)
+            return g;
+
+        const mpz_class d = ((1 - (((x * x) % n) * x) % n + n) * ((((s * s) % n) * (s % n + n)) % n)) % n;
+        return std::make_pair(CubicFieldUnit(std::move(x), std::move(y), 0), std::move(d));
+    }
+
+    void print()
+    {
+        std::cout << "CubicFieldUnit { x = " << x << ", y = " << y << ", z = " << z << " }\n";
+    }
+};
+
+struct Quaternion // <- misleading name, but it's close
+{
+    mpz_class x, y, z, w;
+
+    Quaternion() { x = 1, y = 0, z = 0, w = 0; }
+
+    Quaternion(mpz_class &&x, mpz_class &&y, mpz_class &&z, mpz_class &&w)
+    {
+        this->x = x, this->y = y, this->z = z, this->w = w;
+    }
+
+    mpz_class norm(const mpz_class &d, const mpz_class &n)
+    {
+        return (x * x + d * (y * y + z * z + w * w)) % n;
+    }
+
+    static Quaternion mul(const Quaternion &a, const Quaternion &b, const mpz_class &d, const mpz_class &n)
+    {
+        return Quaternion((a.x * b.x - ((d * (a.y * b.y + a.z * b.z + a.w * b.w)) % n) + n) % n,
+                          (a.x * b.y + a.y * b.x + a.z * b.w - (a.w * b.z) % n + n) % n,
+                          (a.x * b.z + a.z * b.x + a.w * b.y - (a.y * b.w) % n + n) % n,
+                          (a.x * b.w + a.w * b.x + a.y * b.z - (a.z * b.y) % n + n) % n);
+    }
+
+    static Quaternion square(const Quaternion &a, const mpz_class &d, const mpz_class &n)
+    {
+        return Quaternion((a.x * a.x - ((d * (a.y * a.y + a.z * a.z + a.w * a.w)) % n) + n) % n,
+                          ((a.x * a.y) << 1) % n, ((a.x * a.z) << 1) % n, ((a.x * a.w) << 1) % n);
+    }
+
+    static Quaternion pow(Quaternion a, uint64_t exponent, const mpz_class &d, const mpz_class &n)
+    {
+        Quaternion result;
+        while (exponent)
+        {
+            if (exponent & 1)
+                result = mul(result, a, d, n);
+            a = square(a, d, n);
+            exponent >>= 1;
+        }
+        return result;
+    }
+
+    static std::variant<std::pair<Quaternion, mpz_class>, mpz_class> initial_point(
         const mpz_class &n, gmp_randclass &rng)
     {
         mpz_class x = rng.get_z_range(n), y = rng.get_z_range(n), z = rng.get_z_range(n),
@@ -123,7 +195,7 @@ struct Point4d
             return g;
 
         const mpz_class d = ((((1 - x * x) % n) + n) * (s % n + n)) % n;
-        return std::make_pair(Point4d(std::move(x), std::move(y), std::move(z), std::move(w)),
+        return std::make_pair(Quaternion(std::move(x), std::move(y), std::move(z), std::move(w)),
                               std::move(d));
     }
 
@@ -202,8 +274,11 @@ int main()
     mpz_class n;
     std::cin >> n;
 
-    std::cout << "Do you want to work on the group of units in a quadratic field [p] "
-                 "or some quaternion-like thing [q]? [p / q] ";
+    std::cout << "Do you want to work\n"
+                 " - on the group of units in a quadratic field [p]\n"
+                 " - on the group of units in a cubic field [c]\n"
+                 " - or some quaternion-like thing [q]\n"
+                 "=> [p / c / q] ";
 
     char method;
     std::cin >> method;
@@ -213,9 +288,11 @@ int main()
     for (size_t i = 0; i < std::thread::hardware_concurrency(); ++i)
     {
         if (method == 'p')
-            fut.emplace_back(std::async(factorize_with_algebraic_group<Point2d>, n));
+            fut.emplace_back(std::async(factorize_with_algebraic_group<QuadFieldUnit>, n));
+        else if (method == 'c')
+            fut.emplace_back(std::async(factorize_with_algebraic_group<CubicFieldUnit>, n));
         else
-            fut.emplace_back(std::async(factorize_with_algebraic_group<Point4d>, n));
+            fut.emplace_back(std::async(factorize_with_algebraic_group<Quaternion>, n));
     }
 
     while (!fut.empty())
