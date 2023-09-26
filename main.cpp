@@ -336,7 +336,7 @@ mpz_class factorize_with_algebraic_group(mpz_class const &n)
         std::tie(a, d) = std::get<std::pair<T, mpz_class>>(initial);
         assert(a.norm(d, n) == 1);
 
-        for (auto p = primes.begin(); p <= largest_smooth_prime; ++p)
+        for (auto p = primes.begin(); p < largest_smooth_prime; ++p)
         {
             uint64_t q = *p;
             while (q <= smoothness_bound)
@@ -349,13 +349,20 @@ mpz_class factorize_with_algebraic_group(mpz_class const &n)
             return g;
     }
 
-    for (uint64_t p = B1 + 1; p <= B2; ++p)
-        if (is_prime(p))
-            a = T::pow(a, p, d, n);
+    std::cout << "entering stage 2" << std::endl;
 
-    const mpz_class g = a.try_gcd(n);
-    if (g > 1)
-        return g;
+    for (uint64_t large_prime_bound = B1 << 1; large_prime_bound <= B2; large_prime_bound <<= 1)
+    {
+        std::cout << "set large prime bound to " << large_prime_bound << std::endl;
+
+        for (uint64_t p = B1 + 1; p <= B2; ++p)
+            if (is_prime(p))
+                a = T::pow(a, p, d, n);
+
+        const mpz_class g = a.try_gcd(n);
+        if (g > 1)
+            return g;
+    }
 
     return -1;
 }
