@@ -355,7 +355,7 @@ mpz_class factorize_with_algebraic_group(mpz_class const &n)
     {
         std::cout << "set large prime bound to " << large_prime_bound << std::endl;
 
-        for (uint64_t p = B1 + 1; p <= B2; ++p)
+        for (uint64_t p = large_prime_bound / 2 + 1; p <= large_prime_bound; ++p)
             if (is_prime(p))
                 a = T::pow(a, p, d, n);
 
